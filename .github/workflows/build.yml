@@ -431,7 +431,7 @@ jobs:
           wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/GKI/5.10/GKI_5.10_posix.patch
           wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/NTsync/ntsync_base.patch
           wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/NTsync/ntsync_compat_android12-5.10.patch
-          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/CVE-UserNS/cve-2026-43499-rtmutex-5.10.patch
+          wget -q https://raw.githubusercontent.com/miwa212/Realme-GT3-neo5-kernels/main/cve-2026-43499-rtmutex-5.10.patch
           echo " >>> PATCH 1/5: sysvipc task_struct KABI <<<"
           patch -p1 --forward < GKI-5.10-sysvipc_kabi_6_7_8.patch || echo "Patch failed but continuing"
           echo " >>> PATCH 2/5: posix mqueue user_struct KABI <<<"
@@ -552,7 +552,7 @@ jobs:
           cp -r susfs4ksu/kernel_patches/include/* common/include/
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch common/  # Add android kernel patch
           cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/  # Add KSU patch
-          cp kernel_patches/69_hide_stuff.patch common/                                 # Add extra patchs
+          cp kernel_patches/archived/69_hide_stuff.patch common/                                 # Add extra patchs
           cd ~/kernel_platform/common
           patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Patch failed but continuing" # Apply android kernel patch
           patch -p1 --fuzz=3 -F3 < 69_hide_stuff.patch || echo "Patch failed but continuing"         # Apply hide stuff patch 
@@ -699,7 +699,7 @@ jobs:
           cp -r susfs4ksu/kernel_patches/include/* common/include/
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch common/       # Add android kernel patch
           cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU-Next/  # Add KSU patch
-          cp kernel_patches/69_hide_stuff.patch common/                                 # Add extra patchs
+          cp kernel_patches/archived/69_hide_stuff.patch common/                                 # Add extra patchs
           cp kernel_patches/next/scope_min_manual_hooks_v1.4.patch common/                   # Add extra patchs for NEXT
           cd ~/kernel_platform/common
           patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Patch failed but continuing" # Apply android kernel patch
@@ -852,7 +852,7 @@ jobs:
           cp -r susfs4ksu/kernel_patches/include/* common/include/
           cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch Wild_KSU/  # Add KSU patch
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch common/       # Add android kernel patch
-          cp kernel_patches/69_hide_stuff.patch common/                                 # Add extra patchs
+          cp kernel_patches/archived/69_hide_stuff.patch common/                                 # Add extra patchs
           cd ~/kernel_platform/common
           patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Patch failed but continuing" #Apply android kernel patch
           patch -p1 --fuzz=3 -F3 < 69_hide_stuff.patch || echo "Patch failed but continuing"         # Apply hide stuff patch
@@ -976,7 +976,7 @@ jobs:
           cp -r susfs4ksu/kernel_patches/fs/* common/fs
           cp -r susfs4ksu/kernel_patches/include/* common/include/
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch common/  # Add android kernel patch
-          cp kernel_patches/69_hide_stuff.patch common/                                 # Add extra patchs
+          cp kernel_patches/archived/69_hide_stuff.patch common/                                 # Add extra patchs
           cd ~/kernel_platform/common
           patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Patch failed but continuing" # Apply android kernel patch
           patch -p1 --fuzz=3 -F3 < 69_hide_stuff.patch || echo "Patch failed but continuing"         # Apply extra patchs 
