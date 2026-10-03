@@ -1029,20 +1029,28 @@ jobs:
           cp -r "$TEMPORARY/common/"* ~/kernel_platform/common/
           cp -r "$TEMPORARY/out/"* ~/kernel_platform/out/
 
-      - name: Variant control - strip Droidspaces items (Build 8 = fallback kernel)
+      - name: Variant control - keep config, revert KABI header patches (Build 8 = candidate 2)
         if: github.event.inputs.droidspaces == 'yes'
         run: |
-          cd ~/kernel_platform
-          CFG=./common/arch/arm64/configs/gki_defconfig
-          for s in SYSVIPC POSIX_MQUEUE IPC_NS PID_NS DEVTMPFS USER_NS NTSYNC; do
-            sed -i "/^CONFIG_${s}=/d" "$CFG"
-          done
-          sed -i "/Droidspaces container requirements/d" "$CFG"
-          echo ">>> Build 8 will be built WITHOUT the Droidspaces config items (control kernel = author-equivalent)"
-          echo ">>> remaining SYSVIPC lines in defconfig: $(grep -c '^CONFIG_SYSVIPC=y' "$CFG" || true)"
+          # Run#7 实验结论：不带 6 项配置的对照组能开机（42s），
+          # 病因锁定在 "6 项配置 + sysvipc_kabi/posix KABI 头文件补丁"。
+          # 本 arm（Build 8）保留 6 项配置、只撤销两个 KABI 头文件补丁，
+          # 用于区分病因是"配置项本身"还是"补丁改写 task_struct/user_struct"。
           cd ~/kernel_platform/common
           git checkout -- include/linux/sched.h include/linux/sched/user.h 2>/dev/null \
-            || echo "::warning::could not revert sched.h/user.h via git (continuing, config-only control)"
+            || echo "::warning::could not revert sched.h/user.h via git (continuing)"
+          if grep -q "ANDROID_KABI_USE(6" include/linux/sched.h; then
+            echo "::error::sched.h still contains the sysvipc KABI patch - revert FAILED"; exit 1
+          fi
+          if grep -q "ANDROID_KABI_USE" include/linux/sched/user.h; then
+            echo "::error::user.h still contains the posix KABI patch - revert FAILED"; exit 1
+          fi
+          CFG=./arch/arm64/configs/gki_defconfig
+          echo ">>> Build 8 = qtaro baseline + 6 Droidspaces config items, WITHOUT KABI header patches"
+          for s in SYSVIPC POSIX_MQUEUE IPC_NS PID_NS DEVTMPFS USER_NS; do
+            echo "    CONFIG_${s}=y count: $(grep -c "^CONFIG_${s}=y" "$CFG" || true)"
+          done
+          echo ">>> KABI header patches reverted OK (config-only arm)"
 
       - name: Download Suki-SU Ultra for Build 8
         if: github.event.inputs.build_SUKI != 'none'
