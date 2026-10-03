@@ -363,12 +363,21 @@ jobs:
           # Replace gki_defconfig with the proven-bootable full config extracted
           # from the author's QtarO prebuilt kernel (boots on realme UI 6.0 15.0.0.1400).
           # Pure gki_defconfig output (38.9MB) lacks realme built-in drivers and hangs at logo.
-          if [ -f "$GITHUB_WORKSPACE/qtaro.config" ]; then
+          # NOTE: build job has no actions/checkout, so fetch qtaro.config from
+          # the repo directly (runner can reach raw.githubusercontent.com).
+          if [ ! -f "$GITHUB_WORKSPACE/qtaro.config" ]; then
+            mkdir -p "$GITHUB_WORKSPACE"
+            curl -fsSL --retry 3 "https://raw.githubusercontent.com/${{ github.repository }}/main/qtaro.config" -o "$GITHUB_WORKSPACE/qtaro.config" \
+              || echo "::warning::failed to download qtaro.config from repo"
+          fi
+          if [ -s "$GITHUB_WORKSPACE/qtaro.config" ]; then
             cp "$GITHUB_WORKSPACE/qtaro.config" ./common/arch/arm64/configs/gki_defconfig
             echo ">>> gki_defconfig replaced with qtaro.config ($(wc -l < "$GITHUB_WORKSPACE/qtaro.config") lines)"
           else
             echo "::warning::qtaro.config not found in repo root, falling back to stock gki_defconfig"
           fi
+          grep -q "^CONFIG_SYSVIPC=y$" ./common/arch/arm64/configs/gki_defconfig \
+            || echo "::error::gki_defconfig does not look like qtaro.config (CONFIG_SYSVIPC missing) - defconfig override FAILED"
 
           # Adding BBG...
           if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
