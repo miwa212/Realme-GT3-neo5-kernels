@@ -1,22 +1,3 @@
-# ============================================================================
-#  修改版：在 Quantom2/Realme-GT3-neo5-kernels 原版基础上增加了
-#   1) Droidspaces 容器支持（内核补丁 + defconfig 配置），见 "Droidspaces container support" 步骤
-#   2) 修正 SukiSU 变体的触发条件：现在只填 build_SUKI 也能编（原版必须 build_SUKI 和
-#      build_SUKI_SUS 同时非 none 才会触发，否则整段被跳过）
-#
-#  推荐参数（RMX3708 / realme UI 5.0 / 5.10.168-android12，只要 SukiSU + Droidspaces）：
-#    run_mode                 : github
-#    build_KSU / _SUS        : none / none
-#    build_KSUN / _SUS       : none / none
-#    build_WILD / _SUS       : none / none
-#    build_SUKI              : latest
-#    build_SUKI_SUS          : none      <-- 不要开 SUSFS，与 Droidspaces 冲突
-#    release                 : Test
-#    droidspaces             : yes       <-- 新增
-#    droidspaces_ntsync      : no        <-- 想跑 Windows 游戏再改 yes
-#
-#  产物：Actions 页面 Artifacts 里的 anykernel_all → AnyKernel3_SUKI_SUS.zip
-# ============================================================================
 name: Build realme GT Neo 5 Kernels (8 variants)
 
 on:
@@ -93,24 +74,6 @@ on:
           - 'Release'
           - 'Test-release'
           - 'Test'
-
-      # ===== 新增：Droidspaces 容器支持 =====
-      droidspaces:
-        type: choice
-        description: "Droidspaces patches + kernel config"
-        required: true
-        default: 'yes'
-        options:
-          - 'yes'
-          - 'no'
-      droidspaces_ntsync:
-        type: choice
-        description: "Droidspaces NTSync (for Windows games)"
-        required: true
-        default: 'no'
-        options:
-          - 'yes'
-          - 'no'
           
 permissions:
   contents: write
@@ -175,12 +138,6 @@ jobs:
           echo "$parmtable" >> $GITHUB_STEP_SUMMARY
           echo "$parmtable"
               
-      - name: Checkout repo files (qtaro.config, workflow)
-        if: github.event.inputs.run_mode == 'github'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
       - name: Remove Unwanted Software
         if: github.event.inputs.run_mode == 'github'
         uses: AdityaGarg8/remove-unwanted-software@v5
@@ -270,9 +227,10 @@ jobs:
         if: github.event.inputs.run_mode == 'github'
         run: |
           cd ~/
-          mkdir -p ~/stock_boot ~/boot ~/out_boot
-          pip install gdown || pip install --break-system-packages gdown
-          gdown "https://drive.google.com/uc?id=1PtSKw3jEZSyE1MhvzeUwy30wwv7D8_bQ" -O stock_boot/boot.img
+          mkdir ~/stock_boot ~/boot ~/out_boot
+          pip install gdown
+          mkdir -p stock_boot
+          gdown --id 1PtSKw3jEZSyE1MhvzeUwy30wwv7D8_bQ -O stock_boot/boot.img
           git clone https://github.com/WildPlusKernel/AnyKernel3.git -b gki-2.0 --depth=1 --no-tags
 
       - name: Modify Oplus build script
@@ -303,7 +261,7 @@ jobs:
           
           touch ~/make_out.sh
           echo '
-          cd ~/ && ./start.sh || { echo "::error::kernel compile failed"; exit 1; }
+          cd ~/ && ./start.sh
           echo " >>> BUILDING BOOT IMG AND OTHERS <<< "
           echo "     >>> NAME: ${1} "
           cp ~/kernel_platform/out/msm-waipio-waipio-gki/dist/boot.img ~/boot
@@ -365,36 +323,7 @@ jobs:
       - name: Initial Kernel tweaks (config)
         run: |
           cd ~/kernel_platform
-
-          # Replace gki_defconfig with the proven-bootable full config extracted
-          # from the author's QtarO prebuilt kernel (boots on realme UI 6.0 15.0.0.1400).
-          # Pure gki_defconfig output (38.9MB) lacks realme built-in drivers and hangs at logo.
-          QTARO_CFG=""
-          for cand in "$GITHUB_WORKSPACE/qtaro.config" "$GITHUB_WORKSPACE/.github/qtaro.config" ./qtaro.config; do
-            if [ -s "$cand" ]; then QTARO_CFG="$cand"; break; fi
-          done
-          if [ -z "$QTARO_CFG" ]; then
-            for url in \
-              "https://raw.githubusercontent.com/${{ github.repository }}/main/qtaro.config" \
-              "https://github.com/${{ github.repository }}/raw/main/qtaro.config" ; do
-              echo ">>> trying to download qtaro.config from $url"
-              if curl -fL --retry 3 --connect-timeout 20 "$url" -o /tmp/qtaro.config && [ -s /tmp/qtaro.config ]; then
-                QTARO_CFG=/tmp/qtaro.config; break
-              fi
-            done
-          fi
-          if [ -z "$QTARO_CFG" ]; then
-            echo "::error::qtaro.config not found and could not be downloaded - refusing to build the known-unbootable stock gki_defconfig"
-            exit 1
-          fi
-          cp "$QTARO_CFG" ./common/arch/arm64/configs/gki_defconfig
-          echo ">>> gki_defconfig replaced from $QTARO_CFG ($(wc -l < ./common/arch/arm64/configs/gki_defconfig) lines, md5 $(md5sum ./common/arch/arm64/configs/gki_defconfig | cut -d' ' -f1))"
-          if ! head -5 ./common/arch/arm64/configs/gki_defconfig | grep -q "5.10.226 Kernel Configuration"; then
-            echo "::error::defconfig override verification FAILED (qtaro.config header not present) - aborting instead of shipping a bootlooping kernel"
-            exit 1
-          fi
-          echo ">>> defconfig override VERIFIED (qtaro.config in place)"
-
+          
           # Adding BBG...
           if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
            echo "::warning::BBG setup script failed, continuing anyway"
@@ -447,78 +376,6 @@ jobs:
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
-      - name: Droidspaces container support (patches + config)
-        if: github.event.inputs.droidspaces == 'yes'
-        run: |
-          cd ~/kernel_platform
-          mkdir -p ~/dspatch
-          DSP="https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main"
-
-          # 1) ABI 安全的 SYSVIPC 补丁（把 sysvsem/sysvshm 移入 task_struct 的 KABI 保留槽位，不破坏内核 ABI）
-          wget -q -O ~/dspatch/01_sysvipc_kabi.patch "$DSP/GKI/5.10/GKI-5.10-sysvipc_kabi_6_7_8.patch" || echo "::warning::SYSVIPC 补丁下载失败"
-          # 2) POSIX_MQUEUE 的 user_struct KABI 补丁
-          wget -q -O ~/dspatch/02_posix.patch "$DSP/GKI/5.10/GKI_5.10_posix.patch" || echo "::warning::POSIX 补丁下载失败"
-          # 3) CVE-2026-43499（rtmutex 提权）补丁：暂不打。
-          #    它需要把上游 6.x 的 scoped_guard() 改写成 5.10 写法，属于额外变量，
-          #    先排除掉以定位卡 logo 的原因；确认能开机后再加回来。
-          # wget -q -O ~/dspatch/03_cve_rtmutex.patch "$DSP/CVE-UserNS/cve-2026-43499-rtmutex-5.10.patch"
-
-          cd ~/kernel_platform/common
-          for p in 01_sysvipc_kabi 02_posix; do
-            if [ -s ~/dspatch/$p.patch ]; then
-              echo ">>> Applying $p"
-              patch -p1 --forward --fuzz=3 < ~/dspatch/$p.patch || echo "::warning::$p patch not fully applied (continuing)"
-            fi
-          done
-
-          # 3b) CVE-2026-43499 补丁 5.10 兼容性修正：
-          #     上游补丁使用了 scoped_guard()（需要 6.x 的 cleanup.h），
-          #     本 5.10.226-QTARO 树没有该设施，改写为经典 raw_spin_lock/unlock。
-          python3 - <<'PYFIX'
-          p = "kernel/locking/rtmutex.c"
-          s = open(p).read()
-          old = "\tsc\x6fped_guard(raw_spinlock, &waiter_task->pi_lock) {\n\t\trt_mutex_dequeue(lock, waiter);\n\t\twaiter_task->pi_blocked_on = NULL;\n\t}"
-          new = "\traw_spin_lock(&waiter_task->pi_lock);\n\trt_mutex_dequeue(lock, waiter);\n\twaiter_task->pi_blocked_on = NULL;\n\traw_spin_unlock(&waiter_task->pi_lock);"
-          if old in s:
-              open(p, "w").write(s.replace(old, new))
-              print(">>> rtmutex.c scoped_guard rewritten to classic lock/unlock (5.10 compatible)")
-          elif "scoped_guard" in s:
-              raise SystemExit("::error::scoped_guard found but pattern mismatch - abort")
-          else:
-              print(">>> no scoped_guard in rtmutex.c (patch may not have applied) - skip")
-          PYFIX
-
-          # 4) 可选：NTSync（Windows 游戏转译）
-          if [[ "${{ github.event.inputs.droidspaces_ntsync }}" == 'yes' ]]; then
-            wget -q -O ~/dspatch/04_ntsync_base.patch "$DSP/NTsync/ntsync_base.patch" || echo "::warning::ntsync_base download failed"
-            wget -q -O ~/dspatch/05_ntsync_compat.patch "$DSP/NTsync/ntsync_compat_android12-5.10_OOS14.patch" || echo "::warning::ntsync_compat download failed"
-            cd ~/kernel_platform/common
-            patch -p1 --forward --fuzz=3 < ~/dspatch/04_ntsync_base.patch   || echo "::warning::ntsync_base not fully applied"
-            patch -p1 --forward --fuzz=3 < ~/dspatch/05_ntsync_compat.patch || echo "::warning::ntsync_compat not fully applied"
-          fi
-
-          # 5) 追加 Droidspaces 所需内核配置（最小集）
-          #    官方 README：GKI 5.10 只需 SYSVIPC / POSIX_MQUEUE / IPC_NS / PID_NS /
-          #    DEVTMPFS / USER_NS 六项。这里刻意不加 DEVTMPFS_MOUNT、CGROUP_DEVICE、
-          #    CGROUP_PIDS、NTSYNC 以及 netfilter/ipset 附加项，尽量贴近作者"可开机"配置，
-          #    先确保能开机；容器网络（Docker NAT/iptables）等以后再追加。
-          cd ~/kernel_platform
-          CFG=./common/arch/arm64/configs/gki_defconfig
-          cat >> "$CFG" <<EOF
-          # ===== Droidspaces container requirements (minimal set) =====
-          CONFIG_SYSVIPC=y
-          CONFIG_POSIX_MQUEUE=y
-          CONFIG_IPC_NS=y
-          CONFIG_PID_NS=y
-          CONFIG_DEVTMPFS=y
-          CONFIG_USER_NS=y
-          EOF
-          if [[ "${{ github.event.inputs.droidspaces_ntsync }}" == 'yes' ]]; then
-            echo "CONFIG_NTSYNC=y" >> "$CFG"
-          fi
-          echo " >>> Droidspaces patches & config injected <<< "
-          grep -c "CONFIG_SYSVIPC=y" "$CFG" || true
-
       - name: Initial Kernel tweaks (ZRAM)
         run: |
           cd ~/kernel_platform
@@ -567,6 +424,40 @@ jobs:
           patch -p1 --forward < ~/kernel_platform/kernel_patches/common/clear_page_16bytes_align.patch || echo "Patch failed but continuing"
           rm -rf ~/kernel_platform/kernel_patches
    
+      - name: Droidspaces & NTsync patches (android12-5.10)
+        run: |
+          cd ~/kernel_platform/common
+          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/GKI/5.10/GKI-5.10-sysvipc_kabi_6_7_8.patch
+          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/GKI/5.10/GKI_5.10_posix.patch
+          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/NTsync/ntsync_base.patch
+          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/NTsync/ntsync_compat_android12-5.10.patch
+          wget -q https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/main/CVE-UserNS/cve-2026-43499-rtmutex-5.10.patch
+          echo " >>> PATCH 1/5: sysvipc task_struct KABI <<<"
+          patch -p1 --forward < GKI-5.10-sysvipc_kabi_6_7_8.patch || echo "Patch failed but continuing"
+          echo " >>> PATCH 2/5: posix mqueue user_struct KABI <<<"
+          patch -p1 --forward < GKI_5.10_posix.patch || echo "Patch failed but continuing"
+          echo " >>> PATCH 3/5: ntsync base <<<"
+          patch -p1 < ntsync_base.patch || echo "Patch failed but continuing"
+          echo " >>> PATCH 4/5: ntsync compat android12-5.10 <<<"
+          patch -p1 --forward < ntsync_compat_android12-5.10.patch || echo "Patch failed but continuing"
+          echo " >>> PATCH 5/5: CVE-2026-43499 rtmutex fix <<<"
+          patch -p1 --forward < cve-2026-43499-rtmutex-5.10.patch || echo "Patch failed but continuing"
+          # Droidspaces 所需内核配置
+          cat >> ./arch/arm64/configs/gki_defconfig <<EOF
+          CONFIG_SYSVIPC=y
+          CONFIG_POSIX_MQUEUE=y
+          CONFIG_IPC_NS=y
+          CONFIG_PID_NS=y
+          CONFIG_UTS_NS=y
+          CONFIG_USER_NS=y
+          CONFIG_DEVTMPFS=y
+          CONFIG_CGROUP_DEVICE=y
+          CONFIG_CGROUP_PIDS=y
+          CONFIG_MEMCG=y
+          CONFIG_NTSYNC=y
+          EOF
+          grep -c "CONFIG_NTSYNC=y" ./arch/arm64/configs/gki_defconfig
+
       - name: Build 1 (STOCK)
         run: |
           cd ~/ && ./make_out.sh "STOCK"
@@ -1029,68 +920,32 @@ jobs:
           cp -r "$TEMPORARY/common/"* ~/kernel_platform/common/
           cp -r "$TEMPORARY/out/"* ~/kernel_platform/out/
 
-      - name: Variant control - keep config, revert KABI header patches (Build 8 = candidate 2)
-        if: github.event.inputs.droidspaces == 'yes'
-        run: |
-          # Run#7 实验结论：不带 6 项配置的对照组能开机（42s），
-          # 病因锁定在 "6 项配置 + sysvipc_kabi/posix KABI 头文件补丁"。
-          # 本 arm（Build 8）保留 6 项配置、只撤销两个 KABI 头文件补丁，
-          # 用于区分病因是"配置项本身"还是"补丁改写 task_struct/user_struct"。
-          cd ~/kernel_platform/common
-          git checkout -- include/linux/sched.h include/linux/sched/user.h 2>/dev/null \
-            || echo "::warning::could not revert sched.h/user.h via git (continuing)"
-          if grep -q "ANDROID_KABI_USE(6" include/linux/sched.h; then
-            echo "::error::sched.h still contains the sysvipc KABI patch - revert FAILED"; exit 1
-          fi
-          if grep -q "ANDROID_KABI_USE" include/linux/sched/user.h; then
-            echo "::error::user.h still contains the posix KABI patch - revert FAILED"; exit 1
-          fi
-          CFG=./arch/arm64/configs/gki_defconfig
-          echo ">>> Build 8 = qtaro baseline + 6 Droidspaces config items, WITHOUT KABI header patches"
-          for s in SYSVIPC POSIX_MQUEUE IPC_NS PID_NS DEVTMPFS USER_NS; do
-            echo "    CONFIG_${s}=y count: $(grep -c "^CONFIG_${s}=y" "$CFG" || true)"
-          done
-          echo ">>> KABI header patches reverted OK (config-only arm)"
-
       - name: Download Suki-SU Ultra for Build 8
-        if: github.event.inputs.build_SUKI != 'none'
+        if: github.event.inputs.build_SUKI != 'none' && github.event.inputs.build_SUKI_SUS != 'none'
         run: |
           cd ~/kernel_platform
-          if [[ "${{ github.event.inputs.build_SUKI_SUS }}" == 'none' ]]; then
-            # 只编 SukiSU，不带 SUSFS（与 Droidspaces 更兼容）
-            if [[ "${{ github.event.inputs.build_SUKI }}" == 'latest' ]]; then
-              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
-            else
-              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.build_SUKI }}"
-            fi
+          if [[ "${{ github.event.inputs.build_SUKI }}" == 'latest' ]]; then
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
           else
-            if [[ "${{ github.event.inputs.build_SUKI }}" == 'latest' ]]; then
-              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
-            else
-              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.build_SUKI }}"
-            fi
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.build_SUKI }}"
           fi
           cd ~/
 
       - name: Getting Suki-SU Ultra Version and add SUSfs into name for Build 8
-        if: github.event.inputs.build_SUKI != 'none'
+        if: github.event.inputs.build_SUKI != 'none' && github.event.inputs.build_SUKI_SUS != 'none'
         run: |
           cd ~/kernel_platform/KernelSU/kernel/
           BASE_VERSION=10606
           KSU_VERSION="$(expr $(/usr/bin/git rev-list --count main) "+" $BASE_VERSION)"
           cd ../ && COMMIT=$(git rev-parse HEAD)
-          if [[ "${{ github.event.inputs.build_SUKI_SUS }}" == 'none' ]]; then
-            MOD_VER="SukiSU_v${KSU_VERSION}_Droidspaces" # Name Kernel for user
-          else
-            MOD_VER="SukiSU_v${KSU_VERSION}_SUSFS_${SUSFS_VERSION}" # Name Kernel for user
-          fi
+          MOD_VER="SukiSU_v${KSU_VERSION}_SUSFS_${SUSFS_VERSION}" # Name Kernel for user
           echo "SUKI_COMMIT=https://github.com/SukiSU-Ultra/SukiSU-Ultra/commit/$COMMIT" >> $GITHUB_ENV
           echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV            # Save KSU version for later
           echo "MOD_VER=$MOD_VER" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
 
       - name: SukiSU Kernel tweaks for Build 8
-        if: github.event.inputs.build_SUKI != 'none'
+        if: github.event.inputs.build_SUKI != 'none' && github.event.inputs.build_SUKI_SUS != 'none'
         run: |
           cd ~/kernel_platform
           echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig;
@@ -1153,10 +1008,9 @@ jobs:
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig # Use y for suki
           echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig # ALWAYS USE n FOR LATEST ANY KSU
 
-      - name: Build 8 (SukiSU / SukiSU+SUSFS)
-        if: github.event.inputs.build_SUKI != 'none'
+      - name: Build 8 (SukiSU+SUSFS)
+        if: github.event.inputs.build_SUKI != 'none' && github.event.inputs.build_SUKI_SUS != 'none'
         run: |
-          # 产物名沿用仓库约定 SUKI_SUS（即使未启用 SUSFS 也是这个名字）
           cd ~/ && ./make_out.sh "SUKI_SUS"
           
       - name: Disk Space after Build 8
