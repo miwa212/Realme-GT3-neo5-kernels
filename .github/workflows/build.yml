@@ -359,7 +359,17 @@ jobs:
       - name: Initial Kernel tweaks (config)
         run: |
           cd ~/kernel_platform
-          
+
+          # Replace gki_defconfig with the proven-bootable full config extracted
+          # from the author's QtarO prebuilt kernel (boots on realme UI 6.0 15.0.0.1400).
+          # Pure gki_defconfig output (38.9MB) lacks realme built-in drivers and hangs at logo.
+          if [ -f "$GITHUB_WORKSPACE/qtaro.config" ]; then
+            cp "$GITHUB_WORKSPACE/qtaro.config" ./common/arch/arm64/configs/gki_defconfig
+            echo ">>> gki_defconfig replaced with qtaro.config ($(wc -l < "$GITHUB_WORKSPACE/qtaro.config") lines)"
+          else
+            echo "::warning::qtaro.config not found in repo root, falling back to stock gki_defconfig"
+          fi
+
           # Adding BBG...
           if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
            echo "::warning::BBG setup script failed, continuing anyway"
