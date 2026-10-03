@@ -175,6 +175,12 @@ jobs:
           echo "$parmtable" >> $GITHUB_STEP_SUMMARY
           echo "$parmtable"
               
+      - name: Checkout repo files (qtaro.config, workflow)
+        if: github.event.inputs.run_mode == 'github'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Remove Unwanted Software
         if: github.event.inputs.run_mode == 'github'
         uses: AdityaGarg8/remove-unwanted-software@v5
@@ -363,21 +369,31 @@ jobs:
           # Replace gki_defconfig with the proven-bootable full config extracted
           # from the author's QtarO prebuilt kernel (boots on realme UI 6.0 15.0.0.1400).
           # Pure gki_defconfig output (38.9MB) lacks realme built-in drivers and hangs at logo.
-          # NOTE: build job has no actions/checkout, so fetch qtaro.config from
-          # the repo directly (runner can reach raw.githubusercontent.com).
-          if [ ! -f "$GITHUB_WORKSPACE/qtaro.config" ]; then
-            mkdir -p "$GITHUB_WORKSPACE"
-            curl -fsSL --retry 3 "https://raw.githubusercontent.com/${{ github.repository }}/main/qtaro.config" -o "$GITHUB_WORKSPACE/qtaro.config" \
-              || echo "::warning::failed to download qtaro.config from repo"
+          QTARO_CFG=""
+          for cand in "$GITHUB_WORKSPACE/qtaro.config" "$GITHUB_WORKSPACE/.github/qtaro.config" ./qtaro.config; do
+            if [ -s "$cand" ]; then QTARO_CFG="$cand"; break; fi
+          done
+          if [ -z "$QTARO_CFG" ]; then
+            for url in \
+              "https://raw.githubusercontent.com/${{ github.repository }}/main/qtaro.config" \
+              "https://github.com/${{ github.repository }}/raw/main/qtaro.config" ; do
+              echo ">>> trying to download qtaro.config from $url"
+              if curl -fL --retry 3 --connect-timeout 20 "$url" -o /tmp/qtaro.config && [ -s /tmp/qtaro.config ]; then
+                QTARO_CFG=/tmp/qtaro.config; break
+              fi
+            done
           fi
-          if [ -s "$GITHUB_WORKSPACE/qtaro.config" ]; then
-            cp "$GITHUB_WORKSPACE/qtaro.config" ./common/arch/arm64/configs/gki_defconfig
-            echo ">>> gki_defconfig replaced with qtaro.config ($(wc -l < "$GITHUB_WORKSPACE/qtaro.config") lines)"
-          else
-            echo "::warning::qtaro.config not found in repo root, falling back to stock gki_defconfig"
+          if [ -z "$QTARO_CFG" ]; then
+            echo "::error::qtaro.config not found and could not be downloaded - refusing to build the known-unbootable stock gki_defconfig"
+            exit 1
           fi
-          grep -q "^CONFIG_SYSVIPC=y$" ./common/arch/arm64/configs/gki_defconfig \
-            || echo "::error::gki_defconfig does not look like qtaro.config (CONFIG_SYSVIPC missing) - defconfig override FAILED"
+          cp "$QTARO_CFG" ./common/arch/arm64/configs/gki_defconfig
+          echo ">>> gki_defconfig replaced from $QTARO_CFG ($(wc -l < ./common/arch/arm64/configs/gki_defconfig) lines, md5 $(md5sum ./common/arch/arm64/configs/gki_defconfig | cut -d' ' -f1))"
+          if ! head -5 ./common/arch/arm64/configs/gki_defconfig | grep -q "5.10.226 Kernel Configuration"; then
+            echo "::error::defconfig override verification FAILED (qtaro.config header not present) - aborting instead of shipping a bootlooping kernel"
+            exit 1
+          fi
+          echo ">>> defconfig override VERIFIED (qtaro.config in place)"
 
           # Adding BBG...
           if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
