@@ -228,9 +228,9 @@ jobs:
         run: |
           cd ~/
           mkdir ~/stock_boot ~/boot ~/out_boot
-          pip install gdown
+          pip install "gdown>=5"
           mkdir -p stock_boot
-          gdown --id 1PtSKw3jEZSyE1MhvzeUwy30wwv7D8_bQ -O stock_boot/boot.img
+          gdown "https://drive.google.com/uc?id=1PtSKw3jEZSyE1MhvzeUwy30wwv7D8_bQ" -O stock_boot/boot.img
           git clone https://github.com/WildPlusKernel/AnyKernel3.git -b gki-2.0 --depth=1 --no-tags
 
       - name: Modify Oplus build script
