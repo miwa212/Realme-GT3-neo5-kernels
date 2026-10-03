@@ -297,7 +297,7 @@ jobs:
           
           touch ~/make_out.sh
           echo '
-          cd ~/ && ./start.sh
+          cd ~/ && ./start.sh || { echo "::error::kernel compile failed"; exit 1; }
           echo " >>> BUILDING BOOT IMG AND OTHERS <<< "
           echo "     >>> NAME: ${1} "
           cp ~/kernel_platform/out/msm-waipio-waipio-gki/dist/boot.img ~/boot
@@ -433,6 +433,23 @@ jobs:
               patch -p1 --forward --fuzz=3 < ~/dspatch/$p.patch || echo "::warning::$p patch not fully applied (continuing)"
             fi
           done
+
+          # 3b) CVE-2026-43499 补丁 5.10 兼容性修正：
+          #     上游补丁使用了 scoped_guard()（需要 6.x 的 cleanup.h），
+          #     本 5.10.226-QTARO 树没有该设施，改写为经典 raw_spin_lock/unlock。
+          python3 - <<'PYFIX'
+          p = "kernel/locking/rtmutex.c"
+          s = open(p).read()
+          old = "\tsc\x6fped_guard(raw_spinlock, &waiter_task->pi_lock) {\n\t\trt_mutex_dequeue(lock, waiter);\n\t\twaiter_task->pi_blocked_on = NULL;\n\t}"
+          new = "\traw_spin_lock(&waiter_task->pi_lock);\n\trt_mutex_dequeue(lock, waiter);\n\twaiter_task->pi_blocked_on = NULL;\n\traw_spin_unlock(&waiter_task->pi_lock);"
+          if old in s:
+              open(p, "w").write(s.replace(old, new))
+              print(">>> rtmutex.c scoped_guard rewritten to classic lock/unlock (5.10 compatible)")
+          elif "scoped_guard" in s:
+              raise SystemExit("::error::scoped_guard found but pattern mismatch - abort")
+          else:
+              print(">>> no scoped_guard in rtmutex.c (patch may not have applied) - skip")
+          PYFIX
 
           # 4) 可选：NTSync（Windows 游戏转译）
           if [[ "${{ github.event.inputs.droidspaces_ntsync }}" == 'yes' ]]; then
